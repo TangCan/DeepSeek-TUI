@@ -49,7 +49,7 @@ use crate::config_ui::{self, ConfigUiMode, WebConfigSession, WebConfigSessionEve
 use crate::core::engine::{EngineConfig, EngineHandle, spawn_engine};
 use crate::core::events::Event as EngineEvent;
 use crate::core::ops::{Op, USER_SHELL_TOOL_ID_PREFIX};
-use crate::hooks::{HookEvent, HookExecutor};
+use crate::hooks::{HookEvent, HookExecutor, TurnEndPayloadInput, TurnEndTotals};
 use crate::llm_client::LlmClient;
 use crate::localization::{MessageId, tr};
 use crate::models::{
@@ -696,6 +696,41 @@ fn execute_subagent_observer_hook(
         .name(format!("{}-observer-hook", event.as_str()))
         .spawn(move || {
             let _ = hooks.execute_json_observer(event, &context, &payload);
+        });
+}
+
+fn execute_turn_end_observer_hook(
+    app: &App,
+    usage: &Usage,
+    duration: Duration,
+    error: Option<&str>,
+) {
+    if !app.hooks.has_hooks_for_event(HookEvent::TurnEnd) {
+        return;
+    }
+
+    let context = app.base_hook_context();
+    let payload = crate::hooks::turn_end_payload(TurnEndPayloadInput {
+        context: &context,
+        turn_id: app.runtime_turn_id.as_deref(),
+        status: app.runtime_turn_status.as_deref().unwrap_or("unknown"),
+        error,
+        duration,
+        usage,
+        totals: TurnEndTotals {
+            session_tokens: app.session.total_tokens,
+            conversation_tokens: app.session.total_conversation_tokens,
+            input_tokens: app.session.total_input_tokens,
+            output_tokens: app.session.total_output_tokens,
+        },
+        tool_count: app.tool_evidence.len(),
+        queued_message_count: app.queued_message_count(),
+    });
+    let hooks = app.hooks.clone();
+    let _ = std::thread::Builder::new()
+        .name("turn_end-observer-hook".to_string())
+        .spawn(move || {
+            let _ = hooks.execute_json_observer(HookEvent::TurnEnd, &context, &payload);
         });
 }
 
@@ -1769,7 +1804,7 @@ async fn run_event_loop(
                             reasoning_replay_tokens: usage.reasoning_replay_tokens,
                             recorded_at: Instant::now(),
                         });
-                        if let Some(error) = error {
+                        if let Some(error) = error.as_deref() {
                             // Only show "Turn failed:" in the composer status
                             // area when an EngineEvent::Error has NOT already
                             // posted the same message into the transcript.
@@ -1939,6 +1974,8 @@ async fn run_event_loop(
                                 app.queue_message(msg);
                             }
                         }
+
+                        execute_turn_end_observer_hook(app, &usage, turn_elapsed, error.as_deref());
 
                         if queued_to_send.is_none() {
                             queued_to_send = app.pop_queued_message();

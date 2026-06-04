@@ -124,7 +124,7 @@ v0.9 branch so the remaining Windows/manual checks are explicit.
 | #2529 workspace shell opt-in | Draft/conflicting | Review with permissions/sandbox stabilization. |
 | #2530 mention depth cap hint | Draft/mergeable | Already present locally as `a97675824` and `29f57665e`; close/comment after branch is public. |
 | #2576 PrefixCacheChange events | Mergeable | Already present locally through `29acb87a9d`; close/comment after branch is public or merged. |
-| #2578 turn_end observer hook | Conflicting | Defer to hook lifecycle lane. |
+| #2578 turn_end observer hook | Conflicting / locally harvested | Narrow Rust/docs slice landed in the hook lifecycle lane: `turn_end` now uses the existing structured observer path, fires after post-turn state updates and before queued follow-up dispatch, and includes status, usage, totals, duration, tool count, and queued-message count. Close/comment after branch is public, crediting @AresNing and #1364 reporter @esinecan. |
 | #2579 AppendLog session messages | Conflicting | Defer; large architectural change. |
 | #2581 provider fallback chain design doc | Mergeable / empty diff | Manually harvested into `docs/rfcs/2574-provider-fallback-chain.md`; close original PR after branch is public, keep #2574 open for implementation. |
 | #2623 plan prompt modal scroll support | Mergeable | Already harvested into the 22-commit stack. Comment/close original after integration branch is public. |

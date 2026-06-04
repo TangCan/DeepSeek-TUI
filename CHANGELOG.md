@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `.github/AUTHOR_MAP` and a CI co-author credit check so harvested
   commits use GitHub-mappable numeric noreply identities instead of `.local`,
   placeholder, bot/tool, or raw third-party emails.
+- Added a `turn_end` observer hook that fires after post-turn TUI state and
+  token totals are updated. Hooks receive structured JSON with status, usage,
+  totals, duration, tool count, and queued-message count on stdin; stdout is
+  ignored and failures are warn-only (#1364, #2578).
 - Added rich PlanArtifact support to `update_plan`: Plan mode can now carry
   grounded objectives, context, sources, critical files, constraints,
   verification, risks, and handoff notes through the transcript card, Plan

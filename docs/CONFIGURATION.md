@@ -592,6 +592,61 @@ the message. Existing environment variables remain available.
 `shell_env` hooks keep their existing `KEY=VALUE` stdout contract;
 the JSON stdout contract applies only to `message_submit`.
 
+### Turn-end observer hooks
+
+`turn_end` hooks observe the end of each model turn after post-turn
+state, usage totals, cost accounting, notifications, receipts, and
+queue recovery have been updated. They receive JSON on stdin and are
+observer-only: stdout is ignored, failures are logged as warnings, and
+the hook cannot block user input, mutate the transcript, or change the
+next queued follow-up.
+
+```toml
+[[hooks.hooks]]
+event = "turn_end"
+command = "~/.codewhale/hooks/turn-audit.sh"
+timeout_secs = 2
+continue_on_error = true
+```
+
+The payload includes common hook metadata plus post-turn accounting:
+
+```json
+{
+  "event": "turn_end",
+  "session_id": "sess_12345678",
+  "workspace": "/path/to/workspace",
+  "mode": "agent",
+  "model": "deepseek-chat",
+  "turn_id": "turn_12345678",
+  "status": "completed",
+  "error": null,
+  "duration_ms": 1834,
+  "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 180,
+    "prompt_cache_hit_tokens": 900,
+    "prompt_cache_miss_tokens": 300,
+    "reasoning_tokens": null,
+    "reasoning_replay_tokens": null
+  },
+  "totals": {
+    "session_tokens": 1380,
+    "conversation_tokens": 1380,
+    "input_tokens": 1200,
+    "output_tokens": 180
+  },
+  "tool_count": 2,
+  "queued_message_count": 1,
+  "stop_hook_active": false
+}
+```
+
+For `interrupted` or `failed` turns, `status` reflects that terminal
+state and `error` carries the engine error string when one is available.
+`stop_hook_active` is reserved for future re-entry protection and is
+currently always `false`.
+
 ### Sub-agent lifecycle hooks
 
 `subagent_spawn` and `subagent_complete` hooks observe sub-agent lifecycle
