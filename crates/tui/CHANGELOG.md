@@ -7,6 +7,120 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added `/restore list [N]` so users can inspect more side-git rollback
+  snapshots with UTC timestamps before choosing a restore point. Plain
+  `/restore` now shows the 20 most recent snapshots, numeric restore targets can
+  reach beyond that default listing up to a bounded index, and list requests
+  above the visible cap fail explicitly instead of silently truncating.
+- Added HarmonyOS/OpenHarmony support scaffolding: environment-driven
+  `OHOS_NATIVE_SDK` setup scripts and compiler wrappers, platform docs,
+  explicit Rustls ring-provider installation for the no-provider TLS build, and
+  OHOS fallbacks for unsupported keyring, clipboard, sandbox, browser-open, TTY,
+  execpolicy Starlark parsing, and self-update surfaces.
+- Added `scripts/release/check-ohos-deps.sh` and wired it into CI/release
+  preflight so the OpenHarmony target graph fails if unsupported `nix`,
+  `portable-pty`, `starlark`, `arboard`, or `keyring` dependencies re-enter.
+- Added `.github/AUTHOR_MAP` and a CI co-author credit check so harvested
+  commits use GitHub-mappable numeric noreply identities instead of `.local`,
+  placeholder, bot/tool, or raw third-party emails.
+- Added rich PlanArtifact support to `update_plan`: Plan mode can now carry
+  grounded objectives, context, sources, critical files, constraints,
+  verification, risks, and handoff notes through the transcript card, Plan
+  confirmation prompt, `/relay`, fork-state, and saved-session replay.
+- Added `POST /v1/sessions` for runtime clients to save a completed thread as a
+  managed session. The endpoint preserves thread title/model/mode/workspace
+  metadata, maps missing threads to 404, and returns 409 instead of snapshotting
+  queued or active turns.
+
+### Changed
+
+- `/config` now reports the canonical `~/.codewhale/settings.toml` path for TUI
+  settings while still reading legacy DeepSeek-branded settings fallbacks and
+  migrating them into the CodeWhale home on load.
+- `PATCH /v1/threads/{id}` can now update a thread's persisted workspace for
+  GUI/runtime clients. Workspace changes reject active turns and evict idle
+  cached engines so the next turn starts in the new workspace.
+- Split `web_run` session/page cache state so cached page reads use shared
+  page handles and do not serialize through the mutation path. The harvest also
+  adds panic-safe state write-back and serializes cache-mutating unit tests so
+  the global web cache remains stable under normal Cargo test parallelism.
+- Appended volatile `<turn_meta>` blocks after user text in outgoing user
+  message content arrays so provider prefix caches can keep matching the stable
+  user-input prefix across date, route, and working-set changes.
+- Softened contribution intake automation: external issues now receive a warm
+  triage note and are never auto-closed by the contribution gate, while the PR
+  gate copy makes clear that dry-run observations are about maintainer safety,
+  not contributor quality.
+- Added a PR gate marker guard so reopened unapproved PRs do not get duplicate
+  intake comments, and clarified that PR reopening should happen after
+  allowlist approval is merged.
+- Documented the agent and sub-agent stewardship ethos so future automation
+  preserves human issue intake, careful PR review, and contributor credit.
+- Moved the TUI Starlark execpolicy parser and PTY support behind non-OHOS
+  target dependencies so published OpenHarmony builds no longer pull `nix` 0.28
+  through `rustyline` or `portable-pty`.
+- Explicit `skills_dir` configuration is now unioned with workspace skill
+  discovery instead of being shadowed by workspace-local skills, and configured
+  skills take precedence over global defaults when prompt space is constrained.
+- Tool-agent sub-agent routing now inherits the parent session model, or an
+  explicit tool-agent override, instead of hard-coding `deepseek-v4-flash`;
+  the fast lane still disables thinking through provider-aware request shaping.
+- Dense successful read/search/list tool runs now collapse into a single
+  expandable transcript row by default, while running, failed, shell, patch,
+  review, diff, and other risky tool cells remain visible. The setting
+  `tool_collapse = "compact" | "expanded" | "calm"` controls the behavior.
+- Pending-input preview rows now label delivery mode explicitly as steer
+  pending, rejected steer, or queued follow-up, with wrapped continuation rows
+  aligned under the label so busy-turn input state is easier to read (#2054).
+- Editing a queued follow-up is now an explicit pending-input state. Pressing
+  `Esc` while editing a queued follow-up restores the original queued message
+  instead of cancelling the active turn or silently dropping the queued work
+  (#2054).
+- Sidebar hover details now use row-level metadata for truncated Work, Tasks,
+  and Agents rows. Mouse hover opens a bordered, wrapping popover with the full
+  underlying row text, long turn/agent ids, and current sub-agent progress
+  instead of repeating the already-ellipsized sidebar label (#2694, #2734).
+- Sub-agents now preserve checkpoint metadata around long model calls. A
+  per-step API timeout marks the child as interrupted with a continuable
+  checkpoint instead of ending as a null failed result, and `agent_eval` can
+  explicitly continue a live checkpointed interrupted child while normal
+  completed/failed/cancelled follow-up behavior stays unchanged (#2029).
+- Durable task recovery no longer requeues tasks that were `running` when the
+  previous CodeWhale process exited. On restart those records are marked failed
+  with a recovery note, and any running tool-call summaries are marked failed
+  too, so stale shell/task state cannot silently become live work again (#1786).
+- Auto-generated project instructions now reuse the bounded Project Context
+  Pack data instead of running an unbounded summary/tree scan when no
+  `.codewhale/instructions.md` file exists. The fallback keeps later
+  top-level folders visible in noisy large workspaces while the dynamic
+  `<project_context_pack>` marker remains controlled by its own setting
+  (#697, #1827).
+
+### Community
+
+Thanks to **@cyq1017** for the restore-listing implementation (#2513) and
+pending-input delivery-mode label work (#2532, #2054),
+**@wywsoor** for the broader macOS/iTerm rollback UX report (#2494),
+**@HUQIANTAO** for the `web_run` lock-splitting work (#2502) and turn-metadata
+prefix-cache stability work (#2517), **@xyuai** for canonical CodeWhale
+settings-path migration work (#2730), **@gaord** for the runtime thread
+workspace update and completed-thread save APIs (#2640, #2639),
+**@shenjackyuanjie** for the
+HarmonyOS/OpenHarmony port and MatePad Edge validation trail (#2634),
+**@idling11** for the PlanArtifact direction in Plan mode (#2733) and the
+dense tool-call transcript collapse/sidebar detail direction (#2738, #2734,
+#2692, #2694), and
+**@h3c-hexin** for the tool-agent model inheritance and configured
+`skills_dir` fixes (#2736, #2737). Thanks also to **@qiyuanlicn** for the
+checkpoint/resume report that shaped the sub-agent recovery slice (#2029),
+to **@bevis-wong** for the long-running shell/task liveness report (#1786),
+and to **@NASLXTO** and
+**@wuxixing** for the large-workspace startup reports (#697, #1827), and to
+**@linzhiqin2003** and **@merchloubna70-dot** for earlier context-cap and
+startup-diagnosis work that shaped this bounded fallback.
+
 ## [0.8.53] - 2026-06-03
 
 ### Added

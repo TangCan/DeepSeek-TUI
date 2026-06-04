@@ -27,6 +27,8 @@ jobs:
           node-version: 20
       - name: Check version drift
         run: ./scripts/release/check-versions.sh
+      - name: Check OHOS dependency graph
+        run: ./scripts/release/check-ohos-deps.sh
 
   lint:
     name: Lint

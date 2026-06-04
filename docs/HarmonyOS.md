@@ -76,3 +76,17 @@ chmod +x ./ohos-clang.sh ./ohos-clangxx.sh
 Cargo cannot expand environment variables inside `linker` or CMake toolchain
 path values there, so those values are exported by `scripts/ohos-env.ps1` and
 `scripts/ohos-env.sh` instead.
+
+## Dependency Guard
+
+Release prep runs a no-SDK dependency check:
+
+```bash
+./scripts/release/check-ohos-deps.sh
+```
+
+The guard resolves the `codewhale-tui` dependency graph for
+`aarch64-unknown-linux-ohos` and fails if unsupported host/UI crates re-enter
+the target graph: `nix` 0.28/0.29, `portable-pty`, `starlark`, `arboard`, or
+`keyring`. This does not replace a real SDK/sysroot build, but it catches the
+known `starlark -> rustyline -> nix` and PTY/keyring regressions before release.
