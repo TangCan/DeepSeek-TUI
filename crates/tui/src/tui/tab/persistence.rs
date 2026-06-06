@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use super::delegator::DelegationStatus;
 use super::{Priority, TabId, TabMetadata, TabType};
 
 /// Current schema version. Bump when making breaking changes to the
@@ -57,6 +58,10 @@ pub struct PersistedDelegation {
     pub to_tab: u64,
     pub description: String,
     pub priority: Priority,
+    /// Status of the delegation when it was snapshotted. Without this field,
+    /// an in-flight `InProgress` task is silently demoted to `Pending` on
+    /// restart, losing work-in-progress state.
+    pub status: DelegationStatus,
     pub created_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
     pub result: Option<String>,
@@ -122,13 +127,23 @@ pub fn load_from_file(path: &Path) -> std::io::Result<PersistedTabState> {
     // Size check
     let metadata = std::fs::metadata(path)?;
     if metadata.len() > MAX_FILE_SIZE {
-        tracing::warn!(
+        // Silently returning `default()` would let the next save overwrite
+        // the oversized file and destroy the user's data. Surface the error
+        // so the application can refuse to save and preserve the file.
+        tracing::error!(
             size = metadata.len(),
             max = MAX_FILE_SIZE,
             path = %path.display(),
-            "Tab state file too large, ignoring"
+            "Tab state file too large, refusing to load"
         );
-        return Ok(PersistedTabState::default());
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "Tab state file size {} exceeds maximum allowed size {}",
+                metadata.len(),
+                MAX_FILE_SIZE
+            ),
+        ));
     }
 
     let content = std::fs::read_to_string(path)?;
@@ -215,6 +230,7 @@ mod tests {
                 to_tab: 2,
                 description: "Review code".to_string(),
                 priority: Priority::High,
+                status: DelegationStatus::Pending,
                 created_at: Utc::now(),
                 completed_at: None,
                 result: None,
@@ -307,9 +323,12 @@ mod tests {
         }
         std::fs::write(&path, content).unwrap();
 
-        // Should return default state, not panic
-        let loaded = load_from_file(&path).unwrap();
-        assert!(loaded.tabs.is_empty());
+        // Should return an error rather than silently overwriting the file
+        // on next save. Silently returning a default would destroy the
+        // user's data.
+        let result = load_from_file(&path);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::InvalidData);
 
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir(&dir);

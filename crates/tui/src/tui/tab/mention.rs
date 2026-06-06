@@ -151,16 +151,20 @@ fn parse_usize(s: &[u8]) -> Option<usize> {
 
 /// Given a tab number (1-indexed) and the list of tab IDs, return the
 /// matching TabId. Returns `None` if the index is out of range.
+///
+/// The caller is expected to pass the IDs in **visual order** (i.e. the
+/// order they appear in the tab bar). We deliberately do not sort the
+/// list here — tab mentions like `@Tab2` should map to the second tab the
+/// user sees, not the second-smallest ID.
 pub fn resolve_tab_mention<'a, I>(tab_number: usize, tab_ids: I) -> Option<u64>
 where
     I: IntoIterator<Item = &'a u64>,
 {
-    let mut sorted: Vec<u64> = tab_ids.into_iter().copied().collect();
-    sorted.sort_unstable();
-    if tab_number == 0 || tab_number > sorted.len() {
+    let ids: Vec<u64> = tab_ids.into_iter().copied().collect();
+    if tab_number == 0 || tab_number > ids.len() {
         return None;
     }
-    Some(sorted[tab_number - 1])
+    Some(ids[tab_number - 1])
 }
 
 #[cfg(test)]
@@ -205,12 +209,13 @@ mod tests {
 
     #[test]
     fn test_resolve_tab_mention() {
+        // Tab IDs in the visual order they appear in the tab bar.
         let tab_ids = vec![100, 50, 200];
-        // Tab 1 = smallest id (50)
-        assert_eq!(resolve_tab_mention(1, tab_ids.iter()), Some(50));
-        // Tab 2 = middle id (100)
-        assert_eq!(resolve_tab_mention(2, tab_ids.iter()), Some(100));
-        // Tab 3 = largest id (200)
+        // Tab 1 = first in visual order (100)
+        assert_eq!(resolve_tab_mention(1, tab_ids.iter()), Some(100));
+        // Tab 2 = second in visual order (50)
+        assert_eq!(resolve_tab_mention(2, tab_ids.iter()), Some(50));
+        // Tab 3 = third in visual order (200)
         assert_eq!(resolve_tab_mention(3, tab_ids.iter()), Some(200));
         // Out of range
         assert_eq!(resolve_tab_mention(4, tab_ids.iter()), None);

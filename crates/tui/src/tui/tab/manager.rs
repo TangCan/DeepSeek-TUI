@@ -192,6 +192,7 @@ impl TabManager {
                 to_tab: t.to_tab.0,
                 description: t.description.clone(),
                 priority: t.priority,
+                status: t.status,
                 created_at: t.created_at,
                 completed_at: t.completed_at,
                 result: t.result.clone(),
@@ -254,6 +255,8 @@ impl TabManager {
         self.next_tab_id = max_seen_id + 1;
 
         // Restore active delegations so cross-tab work survives restarts.
+        // We honour the persisted status (`InProgress` is preserved) so
+        // work-in-progress isn't silently demoted to `Pending` on restart.
         for d in &state.delegations {
             let task = super::delegator::DelegationTask {
                 task_id: d.task_id.clone(),
@@ -261,7 +264,7 @@ impl TabManager {
                 to_tab: TabId(d.to_tab),
                 description: d.description.clone(),
                 priority: d.priority,
-                status: super::delegator::DelegationStatus::Pending,
+                status: d.status,
                 created_at: d.created_at,
                 deadline: None,
                 completed_at: d.completed_at,
@@ -429,8 +432,13 @@ impl TabManager {
         }
     }
 
-    /// Get pending tasks for a tab
-    pub fn pending_tasks(&self, id: TabId) -> Vec<&DelegationResult> {
+    /// Get completed delegation results for a tab.
+    ///
+    /// Despite the historical name, this returns **completed** results
+    /// (via `delegator.results_for_tab`), not in-flight tasks. Use
+    /// [`Self::pending_delegations`] for tasks that are still pending or
+    /// in progress.
+    pub fn completed_delegations(&self, id: TabId) -> Vec<&DelegationResult> {
         self.delegator.results_for_tab(id)
     }
 
@@ -463,7 +471,12 @@ impl TabManager {
             .unwrap_or_default()
     }
 
-    /// Delegate a task from one tab to another
+    /// Delegate a task from one tab to another.
+    ///
+    /// Returns `None` if either the `from` or `to` tab does not currently
+    /// exist in the manager. This defensive check prevents orphaned
+    /// delegations from being created with stale tab IDs after a tab
+    /// has been closed.
     pub fn delegate_task(
         &mut self,
         from: TabId,
@@ -471,6 +484,11 @@ impl TabManager {
         description: String,
         priority: Priority,
     ) -> Option<String> {
+        let has_from = self.tabs.iter().any(|t| t.metadata.id == from);
+        let has_to = self.tabs.iter().any(|t| t.metadata.id == to);
+        if !has_from || !has_to {
+            return None;
+        }
         self.delegator
             .create_delegation(from, to, description, priority)
     }
@@ -506,8 +524,17 @@ impl TabManager {
         self.delegator.peek_pending_for_tab(tab_id).is_some()
     }
 
-    /// Start a meeting
+    /// Start a meeting.
+    ///
+    /// Returns `None` if any participant tab does not currently exist in
+    /// the manager. This defensive check prevents meetings from being
+    /// created with stale tab IDs after a tab has been closed.
     pub fn start_meeting(&mut self, topic: String, participants: Vec<TabId>) -> Option<String> {
+        for p in &participants {
+            if !self.tabs.iter().any(|t| t.metadata.id == *p) {
+                return None;
+            }
+        }
         self.meeting_manager.start_meeting(topic, participants)
     }
 
@@ -872,5 +899,102 @@ mod tests {
         let group = manager.groups().all_groups();
         assert_eq!(group.len(), 1);
         assert_eq!(group[0].len(), 0);
+    }
+
+    #[test]
+    fn test_delegate_task_rejects_unknown_tabs() {
+        use super::super::Priority;
+
+        let mut manager = TabManager::new();
+        let from = manager
+            .create_tab("Source".to_string(), TabType::Chat)
+            .unwrap();
+
+        // Unknown `to` tab — should be rejected.
+        let bogus_to = TabId(9999);
+        assert!(
+            manager
+                .delegate_task(from, bogus_to, "x".to_string(), Priority::Normal)
+                .is_none()
+        );
+
+        // Unknown `from` tab — should be rejected.
+        let bogus_from = TabId(9998);
+        let to = manager
+            .create_tab("Target".to_string(), TabType::Chat)
+            .unwrap();
+        assert!(
+            manager
+                .delegate_task(bogus_from, to, "x".to_string(), Priority::Normal)
+                .is_none()
+        );
+
+        // Known tabs — should succeed.
+        let id = manager.delegate_task(from, to, "real".to_string(), Priority::Normal);
+        assert!(id.is_some());
+    }
+
+    #[test]
+    fn test_start_meeting_rejects_unknown_participants() {
+        let mut manager = TabManager::new();
+        let a = manager.create_tab("A".to_string(), TabType::Chat).unwrap();
+        let _b = manager.create_tab("B".to_string(), TabType::Chat).unwrap();
+        let bogus = TabId(4242);
+
+        // Any unknown participant — should be rejected.
+        assert!(
+            manager
+                .start_meeting("topic".to_string(), vec![a, bogus])
+                .is_none()
+        );
+        assert!(
+            manager
+                .start_meeting("topic".to_string(), vec![bogus])
+                .is_none()
+        );
+
+        // All-known participants — should succeed.
+        let meeting_id = manager.start_meeting("topic".to_string(), vec![a, _b]);
+        assert!(meeting_id.is_some());
+    }
+
+    #[test]
+    fn test_snapshot_restore_preserves_in_progress_status() {
+        use super::super::Priority;
+        use super::super::delegator::DelegationStatus;
+
+        let mut manager = TabManager::new();
+        let from = manager
+            .create_tab("Source".to_string(), TabType::Chat)
+            .unwrap();
+        let to = manager
+            .create_tab("Target".to_string(), TabType::Chat)
+            .unwrap();
+
+        // Create a delegation and mark it InProgress (simulating a worker
+        // that has taken the task but not yet completed it).
+        let task_id = manager
+            .delegate_task(from, to, "work".to_string(), Priority::High)
+            .unwrap();
+        manager.delegator.start_task(&task_id);
+        assert_eq!(
+            manager.delegator.all_pending()[0].status,
+            DelegationStatus::InProgress
+        );
+
+        // Snapshot and restore on a fresh manager.
+        let snapshot = manager.snapshot();
+        let mut restored = TabManager::new();
+        restored.restore_from_snapshot(&snapshot);
+
+        // The in-flight `InProgress` status must survive the restart —
+        // demoting it to `Pending` would lose work-in-progress. Query
+        // through `all_pending` (not `pending_delegations`) so the test
+        // is not coupled to the public read-filter on `pending_for_tab`,
+        // which intentionally only surfaces not-yet-started tasks.
+        let restored_tasks = restored.delegator.all_pending();
+        assert_eq!(restored_tasks.len(), 1);
+        assert_eq!(restored_tasks[0].status, DelegationStatus::InProgress);
+        assert_eq!(restored_tasks[0].task_id, task_id);
     }
 }
