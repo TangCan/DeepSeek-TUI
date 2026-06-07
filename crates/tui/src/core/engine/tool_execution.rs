@@ -131,14 +131,14 @@ pub(super) fn emit_tool_audit(event: serde_json::Value) {
         }
     };
     let path = PathBuf::from(path);
-    if let Some(parent) = path.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
-            tracing::error!(
-                "Failed to create audit log directory {}: {e}",
-                parent.display()
-            );
-            return;
-        }
+    if let Some(parent) = path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        tracing::error!(
+            "Failed to create audit log directory {}: {e}",
+            parent.display()
+        );
+        return;
     }
     match OpenOptions::new().create(true).append(true).open(&path) {
         Ok(mut file) => {
