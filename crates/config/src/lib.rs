@@ -566,9 +566,9 @@ pub struct ConfigToml {
     pub tools: Option<ToolsToml>,
     #[serde(default)]
     pub providers: ProvidersToml,
-    /// Dormant provider fallback chain (#2574). This is parsed and preserved
-    /// for future provider-routing work; current runtime resolution still uses
-    /// the selected primary provider and does not auto-switch routes.
+    /// Provider fallback chain (#2574). TUI runtime code may advance through
+    /// these providers after recoverable provider errors; config resolution
+    /// itself still reports the selected primary provider.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fallback_providers: Vec<ProviderKind>,
     /// Per-domain network policy (#135). When absent, network tools fall back
@@ -901,7 +901,10 @@ impl ProviderChain {
 
     #[must_use]
     pub fn current(&self) -> ProviderKind {
-        self.providers[self.position]
+        self.providers
+            .get(self.position)
+            .copied()
+            .unwrap_or(self.providers[0])
     }
 
     #[must_use]
@@ -915,6 +918,10 @@ impl ProviderChain {
         }
         self.position += 1;
         Some(self.current())
+    }
+
+    pub fn reset(&mut self) {
+        self.position = 0;
     }
 
     #[must_use]

@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+use codewhale_config::ProviderChain;
+
 use crate::artifacts::ArtifactRecord;
 use crate::client::{CacheWarmupKey, PromptInspection};
 use crate::compaction::CompactionConfig;
@@ -1393,6 +1395,10 @@ pub struct App {
     /// Updated by `/provider` switches so the UI/commands can read the
     /// active backend without re-deriving it from the live config.
     pub api_provider: ApiProvider,
+    /// Primary provider plus configured fallback providers for this session.
+    pub provider_chain: Option<ProviderChain>,
+    /// Human-readable description of the last provider fallback event.
+    pub last_fallback_reason: Option<String>,
     /// True when the active provider/base URL accepts arbitrary model IDs
     /// verbatim rather than DeepSeek-only aliases.
     pub model_ids_passthrough: bool,
@@ -2018,6 +2024,10 @@ impl App {
         let mut effective_auth_config = config.clone();
         effective_auth_config.provider = Some(provider.as_str().to_string());
         let model_ids_passthrough = effective_auth_config.model_ids_pass_through();
+        let provider_chain = provider
+            .kind()
+            .map(|kind| ProviderChain::new(kind, &config.fallback_providers))
+            .filter(|chain| chain.providers().len() > 1);
 
         // Check if the effective provider has an API key. This must happen
         // after settings.default_provider is applied; otherwise a saved
@@ -2231,6 +2241,8 @@ impl App {
             auto_model,
             last_effective_model: None,
             api_provider: provider,
+            provider_chain,
+            last_fallback_reason: None,
             model_ids_passthrough,
             pending_provider_switch: None,
             reasoning_effort,
@@ -5167,6 +5179,56 @@ impl App {
             model: self.effective_model_for_budget().to_string(),
             ..Default::default()
         }
+    }
+
+    pub fn fallback_chain_entries(&self) -> Vec<(usize, ApiProvider, bool)> {
+        let Some(chain) = &self.provider_chain else {
+            return Vec::new();
+        };
+        let position = chain.position();
+        chain
+            .providers()
+            .iter()
+            .enumerate()
+            .map(|(index, provider)| (index, ApiProvider::from_kind(*provider), index == position))
+            .collect()
+    }
+
+    pub fn fallback_chain_position(&self) -> Option<usize> {
+        self.provider_chain.as_ref().map(ProviderChain::position)
+    }
+
+    pub fn fallback_chain_len(&self) -> usize {
+        self.provider_chain
+            .as_ref()
+            .map_or(0, |chain| chain.providers().len())
+    }
+
+    pub fn advance_fallback(&mut self, reason: impl Into<String>) -> Option<ApiProvider> {
+        let reason = reason.into();
+        let Some(chain) = self.provider_chain.as_mut() else {
+            return None;
+        };
+        let Some(next_kind) = chain.advance() else {
+            self.last_fallback_reason = Some(format!(
+                "Fallback chain exhausted after {} provider(s): {reason}",
+                chain.providers().len()
+            ));
+            return None;
+        };
+        let next_provider = ApiProvider::from_kind(next_kind);
+        self.api_provider = next_provider;
+        self.last_fallback_reason = Some(format!(
+            "Fell back to {} after recoverable provider error: {reason}",
+            next_provider.as_str()
+        ));
+        Some(next_provider)
+    }
+
+    pub fn is_fallback_active(&self) -> bool {
+        self.provider_chain
+            .as_ref()
+            .is_some_and(ProviderChain::is_fallback_active)
     }
 }
 

@@ -1685,6 +1685,8 @@ pub struct Config {
     pub prompt_suggestion: Option<bool>,
     pub approval_policy: Option<String>,
     pub sandbox_mode: Option<String>,
+    #[serde(default)]
+    pub fallback_providers: Vec<codewhale_config::ProviderKind>,
     pub yolo: Option<bool>,
     pub verbosity: Option<String>,
     /// External sandbox backend: `"none"` or `"opensandbox"`.
@@ -4784,6 +4786,11 @@ fn merge_config(base: Config, override_cfg: Config) -> Config {
         verbosity: override_cfg.verbosity.or(base.verbosity),
         approval_policy: override_cfg.approval_policy.or(base.approval_policy),
         sandbox_mode: override_cfg.sandbox_mode.or(base.sandbox_mode),
+        fallback_providers: if override_cfg.fallback_providers.is_empty() {
+            base.fallback_providers
+        } else {
+            override_cfg.fallback_providers
+        },
         sandbox_backend: override_cfg.sandbox_backend.or(base.sandbox_backend),
         sandbox_url: override_cfg.sandbox_url.or(base.sandbox_url),
         sandbox_api_key: override_cfg.sandbox_api_key.or(base.sandbox_api_key),

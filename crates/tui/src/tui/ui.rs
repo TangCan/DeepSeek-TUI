@@ -1425,6 +1425,7 @@ async fn run_event_loop(
         let mut transcript_batch_updated = false;
         let mut queued_to_send: Option<QueuedMessage> = None;
         let mut respawn_after_provider_rollback: Option<String> = None;
+        let mut fallback_after_engine_error: Option<ApiProvider> = None;
         {
             let mut rx = engine_handle.rx_event.write().await;
             loop {
@@ -2154,12 +2155,16 @@ async fn run_event_loop(
                         envelope,
                         recoverable: _,
                     } => {
+                        let provider_before_error = app.api_provider;
                         let rollback_after_auth_failure =
                             matches!(
                                 envelope.category,
                                 crate::error_taxonomy::ErrorCategory::Authentication
                             ) && app.pending_provider_switch.is_some();
                         apply_engine_error_to_app(app, envelope);
+                        if app.api_provider != provider_before_error && app.is_fallback_active() {
+                            fallback_after_engine_error = Some(provider_before_error);
+                        }
                         if rollback_after_auth_failure
                             && let Some(rollback_warning) =
                                 rollback_provider_after_auth_failure(app, config)
@@ -2619,6 +2624,10 @@ async fn run_event_loop(
                     }
                 }
             }
+        }
+        if let Some(previous_provider) = fallback_after_engine_error {
+            apply_provider_fallback_switch(app, &mut engine_handle, config, previous_provider)
+                .await;
         }
         if let Some(rollback_warning) = respawn_after_provider_rollback {
             let _ = engine_handle.send(Op::Shutdown).await;
@@ -4969,6 +4978,24 @@ pub(crate) fn apply_engine_error_to_app(
         );
         return;
     }
+    if recoverable
+        && matches!(
+            envelope.category,
+            crate::error_taxonomy::ErrorCategory::Network
+                | crate::error_taxonomy::ErrorCategory::RateLimit
+                | crate::error_taxonomy::ErrorCategory::Timeout
+        )
+        && app.advance_fallback(message.clone()).is_some()
+    {
+        let position = app.fallback_chain_position().unwrap_or(0);
+        let total = app.fallback_chain_len();
+        app.status_message = Some(format!(
+            "Switched to {} (fallback {position}/{}) after recoverable provider error.",
+            app.api_provider.as_str(),
+            total.saturating_sub(1)
+        ));
+        return;
+    }
     if !recoverable {
         app.offline_mode = true;
     }
@@ -6076,6 +6103,11 @@ async fn switch_provider(
     let new_endpoint = display_base_url_host(&new_base_url);
     let cache_scope_changed = previous_provider != target || previous_model != new_model;
     app.api_provider = target;
+    app.provider_chain = target
+        .kind()
+        .map(|kind| codewhale_config::ProviderChain::new(kind, &config.fallback_providers))
+        .filter(|chain| chain.providers().len() > 1);
+    app.last_fallback_reason = None;
     app.model_ids_passthrough = config.model_ids_pass_through();
     app.reasoning_effort = app.reasoning_effort.normalize_for_provider(target);
     app.set_model_selection(new_model.clone());
@@ -6156,6 +6188,105 @@ async fn switch_provider(
         status_message.push_str(" (not fully persisted)");
     }
     app.status_message = Some(status_message);
+}
+
+async fn apply_provider_fallback_switch(
+    app: &mut App,
+    engine_handle: &mut EngineHandle,
+    config: &mut Config,
+    previous_provider: ApiProvider,
+) {
+    let target = app.api_provider;
+    let previous_config = config.clone();
+    let previous_model = app.model.clone();
+
+    config.provider = Some(target.as_str().to_string());
+    if matches!(target, ApiProvider::NvidiaNim)
+        && config
+            .base_url
+            .as_deref()
+            .map(|base| !base.contains("integrate.api.nvidia.com"))
+            .unwrap_or(true)
+    {
+        config.base_url = Some(DEFAULT_NVIDIA_NIM_BASE_URL.to_string());
+    }
+    if matches!(target, ApiProvider::Deepseek | ApiProvider::DeepseekCN)
+        && config
+            .base_url
+            .as_deref()
+            .map(root_base_url_belongs_to_non_deepseek_provider)
+            .unwrap_or(false)
+    {
+        config.base_url = None;
+    }
+
+    if let Err(err) = DeepSeekClient::new(config) {
+        *config = previous_config;
+        app.api_provider = previous_provider;
+        app.last_fallback_reason = Some(format!(
+            "Fallback provider {} was unavailable: {err}",
+            target.as_str()
+        ));
+        app.status_message = Some(format!(
+            "Fallback provider {} unavailable; provider remains {}.",
+            target.as_str(),
+            previous_provider.as_str()
+        ));
+        return;
+    }
+
+    let new_model = config.default_model();
+    let new_base_url = config.deepseek_base_url();
+    let new_endpoint = display_base_url_host(&new_base_url);
+    let cache_scope_changed = previous_provider != target || previous_model != new_model;
+    app.model_ids_passthrough = config.model_ids_pass_through();
+    app.reasoning_effort = app.reasoning_effort.normalize_for_provider(target);
+    app.set_model_selection(new_model.clone());
+    app.update_model_compaction_budget();
+    if cache_scope_changed {
+        app.clear_model_scoped_telemetry();
+    } else {
+        app.session.last_prompt_tokens = None;
+        app.session.last_completion_tokens = None;
+    }
+
+    let _ = engine_handle.send(Op::Shutdown).await;
+    let engine_config = build_engine_config(app, config);
+    *engine_handle = spawn_engine(engine_config, config);
+
+    if !app.api_messages.is_empty() {
+        let _ = engine_handle
+            .send(Op::SyncSession {
+                session_id: app.current_session_id.clone(),
+                messages: app.api_messages.clone(),
+                system_prompt: app.system_prompt.clone(),
+                system_prompt_override: false,
+                model: app.model.clone(),
+                workspace: app.workspace.clone(),
+            })
+            .await;
+    }
+    let _ = engine_handle
+        .send(Op::SetCompaction {
+            config: app.compaction_config(),
+        })
+        .await;
+
+    app.add_message(HistoryCell::System {
+        content: format!(
+            "Provider fallback: {} -> {}\nModel: {} -> {}\nEndpoint: {}",
+            previous_provider.as_str(),
+            target.as_str(),
+            previous_model,
+            new_model,
+            new_endpoint
+        ),
+    });
+    app.status_message = Some(format!(
+        "Fallback provider: {} via {}",
+        target.as_str(),
+        new_endpoint
+    ));
 }
 
 fn root_base_url_belongs_to_non_deepseek_provider(base_url: &str) -> bool {

@@ -8100,6 +8100,45 @@ fn recoverable_engine_error_does_not_enter_offline_mode() {
     let _ = ErrorEnvelope::transient("");
 }
 
+#[test]
+fn recoverable_provider_error_advances_fallback_chain() {
+    use crate::error_taxonomy::{ErrorCategory, ErrorEnvelope, ErrorSeverity};
+
+    let mut app = create_test_app();
+    app.api_provider = ApiProvider::Deepseek;
+    app.provider_chain = Some(codewhale_config::ProviderChain::new(
+        codewhale_config::ProviderKind::Deepseek,
+        &[codewhale_config::ProviderKind::Openrouter],
+    ));
+
+    apply_engine_error_to_app(
+        &mut app,
+        ErrorEnvelope::new(
+            ErrorCategory::RateLimit,
+            ErrorSeverity::Warning,
+            true,
+            "rate_limit",
+            "provider returned 429",
+        ),
+    );
+
+    assert_eq!(app.api_provider, ApiProvider::Openrouter);
+    assert!(app.is_fallback_active());
+    assert!(!app.offline_mode);
+    assert!(
+        app.status_message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Switched to openrouter")
+    );
+    assert!(
+        app.last_fallback_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("provider returned 429")
+    );
+}
+
 #[tokio::test]
 async fn provider_switch_auth_error_restores_previous_provider_and_model() {
     use crate::error_taxonomy::ErrorEnvelope;
