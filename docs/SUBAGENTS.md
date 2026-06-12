@@ -152,10 +152,10 @@ example:
 
 ```toml
 provider = "moonshot"
-model = "kimi-k2.6"
+model = "kimi-k2.7-code"
 
 [subagents]
-worker_model = "kimi-k2.5"
+worker_model = "kimi-k2.6"
 ```
 
 Spawn-time `model` arguments on `agent_open` are validated the same way; an

@@ -3433,14 +3433,14 @@ mod tests {
             "--provider",
             "moonshot",
             "--model",
-            "kimi-k2.6",
+            "kimi-k2.7-code",
             "--workspace",
             "/tmp/codewhale-workspace",
         ]);
         let resolved = ResolvedRuntimeOptions {
             provider: ProviderKind::Moonshot,
             provider_source: ProviderSource::Cli,
-            model: "kimi-k2.6".to_string(),
+            model: "kimi-k2.7-code".to_string(),
             api_key: Some("resolved-kimi-key".to_string()),
             api_key_source: Some(RuntimeApiKeySource::Keyring),
             base_url: "https://api.moonshot.ai/v1".to_string(),
@@ -3462,7 +3462,7 @@ mod tests {
         );
         assert_eq!(
             command_env(&cmd, "DEEPSEEK_MODEL").as_deref(),
-            Some("kimi-k2.6")
+            Some("kimi-k2.7-code")
         );
         assert_eq!(
             command_env(&cmd, "DEEPSEEK_API_KEY").as_deref(),

@@ -280,8 +280,10 @@ fn known_context_window_for_model(model_lower: &str) -> Option<u32> {
         | "qwen/qwen3.6-max-preview"
         | "qwen/qwen3.6-27b"
         | "tencent/hy3-preview"
+        | "moonshotai/kimi-k2.7-code"
         | "moonshotai/kimi-k2.6"
         | "moonshotai/kimi-k2.6:free"
+        | "kimi-k2.7-code"
         | "kimi-k2.6"
         | "kimi-for-coding" => Some(262_144),
         "z-ai/glm-5.1" | "z-ai/glm-5v-turbo" | "glm-5.1" | "glm-5v-turbo" => Some(202_752),
@@ -316,7 +318,9 @@ pub fn max_output_tokens_for_model(model: &str) -> Option<u32> {
         "claude-sonnet-4-6" | "claude-haiku-4-5" => Some(64_000),
         "arcee-ai/trinity-large-thinking"
         | "trinity-large-thinking"
+        | "moonshotai/kimi-k2.7-code"
         | "moonshotai/kimi-k2.6"
+        | "kimi-k2.7-code"
         | "kimi-k2.6"
         | "kimi-for-coding" => Some(262_144),
         "minimax/minimax-m3" | "minimax-m3" => Some(524_288),
@@ -367,8 +371,10 @@ pub fn model_supports_reasoning(model: &str) -> bool {
             | "google/gemma-4-31b-it:free"
             | "google/gemma-4-26b-a4b-it"
             | "google/gemma-4-26b-a4b-it:free"
+            | "moonshotai/kimi-k2.7-code"
             | "moonshotai/kimi-k2.6"
             | "moonshotai/kimi-k2.6:free"
+            | "kimi-k2.7-code"
             | "kimi-k2.6"
             | "minimax/minimax-m3"
             | "minimax-m3"
@@ -592,6 +598,7 @@ mod tests {
             ("mimo-v2.5-pro", 1_000_000),
             ("mimo-v2.5", 1_000_000),
             ("minimax/minimax-m3", 1_000_000),
+            ("moonshotai/kimi-k2.7-code", 262_144),
             ("moonshotai/kimi-k2.6", 262_144),
             ("google/gemma-4-31b-it", 262_144),
             ("z-ai/glm-5.1", 202_752),
@@ -624,6 +631,7 @@ mod tests {
     fn moonshot_native_kimi_ids_support_reasoning_except_for_coding() {
         // #3016: bare Moonshot ids (no moonshotai/ prefix) emit
         // reasoning_content; kimi-for-coding is the non-thinking exception.
+        assert!(model_supports_reasoning("kimi-k2.7-code"));
         assert!(model_supports_reasoning("kimi-k2.6"));
         assert!(model_supports_reasoning("kimi-k2.5"));
         assert!(!model_supports_reasoning("kimi-for-coding"));
@@ -680,6 +688,7 @@ mod tests {
         // ids without the OpenRouter vendor prefix; both spellings must
         // resolve identical metadata (#1310 ride-along on #3023).
         for (model, expected_window) in [
+            ("kimi-k2.7-code", 262_144),
             ("kimi-k2.6", 262_144),
             ("minimax-m3", 1_000_000),
             ("glm-5.1", 202_752),
@@ -691,6 +700,7 @@ mod tests {
         assert!(!model_supports_reasoning("kimi-for-coding"));
         assert_eq!(context_window_for_model("glm-5v-turbo"), Some(202_752));
         assert!(!model_supports_reasoning("glm-5v-turbo"));
+        assert_eq!(max_output_tokens_for_model("kimi-k2.7-code"), Some(262_144));
         assert_eq!(max_output_tokens_for_model("kimi-k2.6"), Some(262_144));
         assert_eq!(
             max_output_tokens_for_model("kimi-for-coding"),

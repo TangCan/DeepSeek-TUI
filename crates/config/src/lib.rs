@@ -43,6 +43,7 @@ const OPENROUTER_ARCEE_TRINITY_LARGE_THINKING_MODEL: &str = "arcee-ai/trinity-la
 const OPENROUTER_GEMMA_4_31B_MODEL: &str = "google/gemma-4-31b-it";
 const OPENROUTER_GEMMA_4_26B_A4B_MODEL: &str = "google/gemma-4-26b-a4b-it";
 const OPENROUTER_GLM_5_1_MODEL: &str = "z-ai/glm-5.1";
+const OPENROUTER_KIMI_K2_7_CODE_MODEL: &str = "moonshotai/kimi-k2.7-code";
 const OPENROUTER_KIMI_K2_6_MODEL: &str = "moonshotai/kimi-k2.6";
 const OPENROUTER_NEMOTRON_3_NANO_OMNI_MODEL: &str =
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free";
@@ -70,7 +71,8 @@ const DEFAULT_SILICONFLOW_FLASH_MODEL: &str = "deepseek-ai/DeepSeek-V4-Flash";
 const DEFAULT_ARCEE_MODEL: &str = "trinity-large-thinking";
 const ARCEE_TRINITY_LARGE_PREVIEW_MODEL: &str = "trinity-large-preview";
 const ARCEE_TRINITY_MINI_MODEL: &str = "trinity-mini";
-const DEFAULT_MOONSHOT_MODEL: &str = "kimi-k2.6";
+const DEFAULT_MOONSHOT_MODEL: &str = "kimi-k2.7-code";
+const MOONSHOT_KIMI_K2_6_MODEL: &str = "kimi-k2.6";
 const DEFAULT_MOONSHOT_BASE_URL: &str = "https://api.moonshot.ai/v1";
 const DEFAULT_KIMI_CODE_MODEL: &str = "kimi-for-coding";
 const DEFAULT_KIMI_CODE_BASE_URL: &str = "https://api.kimi.com/coding/v1";
@@ -2370,7 +2372,20 @@ fn normalize_model_for_provider(provider: ProviderKind, model: &str) -> String {
         (ProviderKind::Arcee, "arcee-trinity-large-preview") => {
             ARCEE_TRINITY_LARGE_PREVIEW_MODEL.to_string()
         }
-        (ProviderKind::Moonshot, "kimi-k2.6" | "kimi-k2") => DEFAULT_MOONSHOT_MODEL.to_string(),
+        (
+            ProviderKind::Moonshot,
+            "kimi"
+            | "kimi-k2"
+            | "kimi-k2.7"
+            | "kimi-k2-7"
+            | "kimi-k2.7-code"
+            | "kimi-k2-7-code"
+            | "kimi-code"
+            | "moonshot-kimi-k2.7-code",
+        ) => DEFAULT_MOONSHOT_MODEL.to_string(),
+        (ProviderKind::Moonshot, "kimi-k2.6" | "kimi-k2-6" | "moonshot-kimi-k2.6") => {
+            MOONSHOT_KIMI_K2_6_MODEL.to_string()
+        }
         (ProviderKind::Sglang, "deepseek-v4-pro" | "deepseek-v4pro") => {
             DEFAULT_SGLANG_MODEL.to_string()
         }
@@ -2471,6 +2486,16 @@ fn canonical_openrouter_recent_model_id(model: &str) -> Option<&'static str> {
         OPENROUTER_GLM_5_1_MODEL | "glm-5.1" | "glm-5-1" | "zai-glm-5.1" | "zai-glm-5-1" => {
             Some(OPENROUTER_GLM_5_1_MODEL)
         }
+        OPENROUTER_KIMI_K2_7_CODE_MODEL
+        | "kimi"
+        | "kimi-k2"
+        | "kimi-k2.7"
+        | "kimi-k2-7"
+        | "kimi-k2.7-code"
+        | "kimi-k2-7-code"
+        | "kimi-code"
+        | "moonshot-kimi-k2.7-code"
+        | "openrouter-kimi-k2.7-code" => Some(OPENROUTER_KIMI_K2_7_CODE_MODEL),
         OPENROUTER_KIMI_K2_6_MODEL | "kimi-k2.6" | "kimi-k2-6" | "moonshot-kimi-k2.6" => {
             Some(OPENROUTER_KIMI_K2_6_MODEL)
         }
@@ -5530,7 +5555,7 @@ mode = "token-plan-usa"
     }
 
     #[test]
-    fn moonshot_provider_defaults_to_kimi_k2() {
+    fn moonshot_provider_defaults_to_kimi_k27_code() {
         let _lock = env_lock();
         let _env = EnvGuard::without_deepseek_runtime_overrides();
         let config = ConfigToml {
@@ -5543,6 +5568,22 @@ mode = "token-plan-usa"
         assert_eq!(resolved.provider, ProviderKind::Moonshot);
         assert_eq!(resolved.base_url, DEFAULT_MOONSHOT_BASE_URL);
         assert_eq!(resolved.model, DEFAULT_MOONSHOT_MODEL);
+    }
+
+    #[test]
+    fn moonshot_provider_preserves_explicit_kimi_k26() {
+        let _lock = env_lock();
+        let _env = EnvGuard::without_deepseek_runtime_overrides();
+        let mut config = ConfigToml {
+            provider: ProviderKind::Moonshot,
+            ..ConfigToml::default()
+        };
+        config.providers.moonshot.model = Some("kimi-k2.6".to_string());
+
+        let resolved = config.resolve_runtime_options(&CliRuntimeOverrides::default());
+
+        assert_eq!(resolved.provider, ProviderKind::Moonshot);
+        assert_eq!(resolved.model, MOONSHOT_KIMI_K2_6_MODEL);
     }
 
     #[test]
@@ -6298,6 +6339,8 @@ mode = "token-plan-usa"
             ("qwen3.6-max-preview", OPENROUTER_QWEN_3_6_MAX_PREVIEW_MODEL),
             ("qwen3.6-plus", OPENROUTER_QWEN_3_6_PLUS_MODEL),
             ("mimo-v2.5-pro", OPENROUTER_XIAOMI_MIMO_V2_5_PRO_MODEL),
+            ("kimi-k2.7-code", OPENROUTER_KIMI_K2_7_CODE_MODEL),
+            ("kimi", OPENROUTER_KIMI_K2_7_CODE_MODEL),
             ("kimi-k2.6", OPENROUTER_KIMI_K2_6_MODEL),
             ("gemma-4-31b-it", OPENROUTER_GEMMA_4_31B_MODEL),
             ("glm-5.1", OPENROUTER_GLM_5_1_MODEL),

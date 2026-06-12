@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Moonshot Kimi K2.7 Code model.** The Moonshot/Kimi provider now defaults to
+  `kimi-k2.7-code`, recognizes `kimi`/`kimi-k2` aliases for that model, keeps
+  explicit `kimi-k2.6` selectable, and adds the OpenRouter
+  `moonshotai/kimi-k2.7-code` registry row.
 - **Cursor-style activity metadata rows (#3146).** Dense successful tool-run
   summaries now render as a single muted `Explored ...` / `Updated metadata`
   row while keeping keyboard/mouse expansion and detail inspection intact.

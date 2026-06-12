@@ -71,6 +71,7 @@ pub const OPENROUTER_ARCEE_TRINITY_LARGE_THINKING_MODEL: &str = "arcee-ai/trinit
 pub const OPENROUTER_GEMMA_4_31B_MODEL: &str = "google/gemma-4-31b-it";
 pub const OPENROUTER_GEMMA_4_26B_A4B_MODEL: &str = "google/gemma-4-26b-a4b-it";
 pub const OPENROUTER_GLM_5_1_MODEL: &str = "z-ai/glm-5.1";
+pub const OPENROUTER_KIMI_K2_7_CODE_MODEL: &str = "moonshotai/kimi-k2.7-code";
 pub const OPENROUTER_KIMI_K2_6_MODEL: &str = "moonshotai/kimi-k2.6";
 pub const OPENROUTER_MINIMAX_M3_MODEL: &str = "minimax/minimax-m3";
 pub const OPENROUTER_NEMOTRON_3_NANO_OMNI_MODEL: &str =
@@ -99,6 +100,7 @@ pub const RECENT_OPENROUTER_LARGE_MODELS: &[&str] = &[
     OPENROUTER_QWEN_3_7_MAX_MODEL,
     OPENROUTER_MINIMAX_2_7_MODEL,
     OPENROUTER_NEMOTRON_3_ULTRA_MODEL,
+    OPENROUTER_KIMI_K2_7_CODE_MODEL,
     OPENROUTER_KIMI_K2_6_MODEL,
     OPENROUTER_GLM_5_1_MODEL,
     OPENROUTER_TENCENT_HY3_PREVIEW_MODEL,
@@ -132,7 +134,8 @@ pub const DEFAULT_ARCEE_MODEL: &str = "trinity-large-thinking";
 pub const ARCEE_TRINITY_LARGE_PREVIEW_MODEL: &str = "trinity-large-preview";
 pub const ARCEE_TRINITY_MINI_MODEL: &str = "trinity-mini";
 pub const DEFAULT_ARCEE_BASE_URL: &str = "https://api.arcee.ai/api/v1";
-pub const DEFAULT_MOONSHOT_MODEL: &str = "kimi-k2.6";
+pub const DEFAULT_MOONSHOT_MODEL: &str = "kimi-k2.7-code";
+pub const MOONSHOT_KIMI_K2_6_MODEL: &str = "kimi-k2.6";
 pub const DEFAULT_MOONSHOT_BASE_URL: &str = "https://api.moonshot.ai/v1";
 pub const DEFAULT_KIMI_CODE_MODEL: &str = "kimi-for-coding";
 pub const DEFAULT_KIMI_CODE_BASE_URL: &str = "https://api.kimi.com/coding/v1";
@@ -653,6 +656,16 @@ fn canonical_openrouter_recent_model_id(model: &str) -> Option<&'static str> {
         OPENROUTER_GLM_5_1_MODEL | "glm-5.1" | "glm-5-1" | "zai-glm-5.1" | "zai-glm-5-1" => {
             Some(OPENROUTER_GLM_5_1_MODEL)
         }
+        OPENROUTER_KIMI_K2_7_CODE_MODEL
+        | "kimi"
+        | "kimi-k2"
+        | "kimi-k2.7"
+        | "kimi-k2-7"
+        | "kimi-k2.7-code"
+        | "kimi-k2-7-code"
+        | "kimi-code"
+        | "moonshot-kimi-k2.7-code"
+        | "openrouter-kimi-k2.7-code" => Some(OPENROUTER_KIMI_K2_7_CODE_MODEL),
         OPENROUTER_KIMI_K2_6_MODEL | "kimi-k2.6" | "kimi-k2-6" | "moonshot-kimi-k2.6" => {
             Some(OPENROUTER_KIMI_K2_6_MODEL)
         }
@@ -766,6 +779,23 @@ fn canonical_arcee_model_id(model: &str) -> Option<&'static str> {
     }
 }
 
+fn canonical_moonshot_model_id(model: &str) -> Option<&'static str> {
+    let normalized = model.trim().to_ascii_lowercase();
+    let normalized = normalized.replace(['_', ' '], "-");
+    match normalized.as_str() {
+        "kimi"
+        | "kimi-k2"
+        | "kimi-k2.7"
+        | "kimi-k2-7"
+        | "kimi-k2.7-code"
+        | "kimi-k2-7-code"
+        | "kimi-code"
+        | "moonshot-kimi-k2.7-code" => Some(DEFAULT_MOONSHOT_MODEL),
+        "kimi-k2.6" | "kimi-k2-6" | "moonshot-kimi-k2.6" => Some(MOONSHOT_KIMI_K2_6_MODEL),
+        _ => None,
+    }
+}
+
 /// Normalize a model selected through the TUI for the active provider.
 ///
 /// Official DeepSeek endpoints require bare model IDs. Provider-prefixed
@@ -792,6 +822,12 @@ pub fn normalize_model_name_for_provider(provider: ApiProvider, model: &str) -> 
 
     if matches!(provider, ApiProvider::Arcee) {
         return canonical_arcee_model_id(model)
+            .map(ToString::to_string)
+            .or_else(|| normalize_custom_model_id(model));
+    }
+
+    if matches!(provider, ApiProvider::Moonshot) {
+        return canonical_moonshot_model_id(model)
             .map(ToString::to_string)
             .or_else(|| normalize_custom_model_id(model));
     }
@@ -4653,6 +4689,20 @@ fn model_for_provider(provider: ApiProvider, normalized: String) -> String {
         (ApiProvider::Sglang, "deepseek-v4-flash") => DEFAULT_SGLANG_FLASH_MODEL.to_string(),
         (ApiProvider::Vllm, "deepseek-v4-pro") => DEFAULT_VLLM_MODEL.to_string(),
         (ApiProvider::Vllm, "deepseek-v4-flash") => DEFAULT_VLLM_FLASH_MODEL.to_string(),
+        (
+            ApiProvider::Moonshot,
+            "kimi"
+            | "kimi-k2"
+            | "kimi-k2.7"
+            | "kimi-k2-7"
+            | "kimi-k2.7-code"
+            | "kimi-k2-7-code"
+            | "kimi-code"
+            | "moonshot-kimi-k2.7-code",
+        ) => DEFAULT_MOONSHOT_MODEL.to_string(),
+        (ApiProvider::Moonshot, "kimi-k2.6" | "kimi-k2-6" | "moonshot-kimi-k2.6") => {
+            MOONSHOT_KIMI_K2_6_MODEL.to_string()
+        }
         _ => normalized,
     }
 }
@@ -8168,6 +8218,8 @@ api_key = "old-openrouter-key"
             ("qwen3.6-max-preview", OPENROUTER_QWEN_3_6_MAX_PREVIEW_MODEL),
             ("qwen3.6-plus", OPENROUTER_QWEN_3_6_PLUS_MODEL),
             ("mimo-v2.5-pro", OPENROUTER_XIAOMI_MIMO_V2_5_PRO_MODEL),
+            ("kimi-k2.7-code", OPENROUTER_KIMI_K2_7_CODE_MODEL),
+            ("kimi", OPENROUTER_KIMI_K2_7_CODE_MODEL),
             ("kimi-k2.6", OPENROUTER_KIMI_K2_6_MODEL),
             ("minimax-m3", OPENROUTER_MINIMAX_M3_MODEL),
             ("gemma-4-31b-it", OPENROUTER_GEMMA_4_31B_MODEL),
@@ -8175,6 +8227,22 @@ api_key = "old-openrouter-key"
         ] {
             assert_eq!(
                 normalize_model_name_for_provider(ApiProvider::Openrouter, alias).as_deref(),
+                Some(expected)
+            );
+        }
+    }
+
+    #[test]
+    fn normalize_model_name_for_provider_maps_moonshot_aliases() {
+        for (alias, expected) in [
+            ("kimi", DEFAULT_MOONSHOT_MODEL),
+            ("kimi-k2.7", DEFAULT_MOONSHOT_MODEL),
+            ("kimi-k2.7-code", DEFAULT_MOONSHOT_MODEL),
+            ("kimi-code", DEFAULT_MOONSHOT_MODEL),
+            ("kimi-k2.6", MOONSHOT_KIMI_K2_6_MODEL),
+        ] {
+            assert_eq!(
+                normalize_model_name_for_provider(ApiProvider::Moonshot, alias).as_deref(),
                 Some(expected)
             );
         }
@@ -8284,7 +8352,7 @@ api_key = "old-openrouter-key"
     }
 
     #[test]
-    fn model_completion_names_for_moonshot_excludes_oauth_only_kimi_code_model() {
+    fn model_completion_names_for_moonshot_uses_latest_platform_model() {
         assert_eq!(
             model_completion_names_for_provider(ApiProvider::Moonshot),
             vec![DEFAULT_MOONSHOT_MODEL]
@@ -10464,11 +10532,11 @@ base_url = "https://api.kimi.com/coding/v1"
 
     /// Moonshot Platform path: when [providers.moonshot] is empty (or
     /// missing) and no Kimi Code endpoint is configured, the resolver
-    /// defaults to the Moonshot Platform base URL and the `kimi-k2.6`
+    /// defaults to the Moonshot Platform base URL and the latest Kimi platform
     /// model. This is the "I have a Moonshot Platform API key, not a
     /// Kimi Code plan key" path.
     #[test]
-    fn moonshot_platform_defaults_to_kimi_k26() -> Result<()> {
+    fn moonshot_platform_defaults_to_kimi_k27_code() -> Result<()> {
         let _lock = lock_test_env();
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)

@@ -287,6 +287,16 @@ impl Default for ModelRegistry {
                 supports_reasoning: true,
             },
             ModelInfo {
+                id: "moonshotai/kimi-k2.7-code".to_string(),
+                provider: ProviderKind::Openrouter,
+                aliases: vec![
+                    "kimi-k2.7-code".to_string(),
+                    "openrouter-kimi-k2.7-code".to_string(),
+                ],
+                supports_tools: true,
+                supports_reasoning: true,
+            },
+            ModelInfo {
                 id: "moonshotai/kimi-k2.6".to_string(),
                 provider: ProviderKind::Openrouter,
                 aliases: vec!["openrouter-kimi-k2.6".to_string()],
@@ -486,13 +496,22 @@ impl Default for ModelRegistry {
                 supports_reasoning: false,
             },
             ModelInfo {
-                id: "kimi-k2.6".to_string(),
+                id: "kimi-k2.7-code".to_string(),
                 provider: ProviderKind::Moonshot,
                 aliases: vec![
                     "kimi".to_string(),
                     "kimi-k2".to_string(),
-                    "moonshot-kimi-k2.6".to_string(),
+                    "kimi-k2.7".to_string(),
+                    "kimi-code".to_string(),
+                    "moonshot-kimi-k2.7-code".to_string(),
                 ],
+                supports_tools: true,
+                supports_reasoning: true,
+            },
+            ModelInfo {
+                id: "kimi-k2.6".to_string(),
+                provider: ProviderKind::Moonshot,
+                aliases: vec!["kimi-k2.6".to_string(), "moonshot-kimi-k2.6".to_string()],
                 supports_tools: true,
                 supports_reasoning: true,
             },
@@ -1041,6 +1060,30 @@ mod tests {
     }
 
     #[test]
+    fn moonshot_default_and_aliases_use_kimi_k27_code() {
+        let registry = ModelRegistry::default();
+
+        for requested in [None, Some("kimi"), Some("kimi-k2.7-code")] {
+            let resolved = registry.resolve(requested, Some(ProviderKind::Moonshot));
+
+            assert_eq!(resolved.resolved.provider, ProviderKind::Moonshot);
+            assert_eq!(resolved.resolved.id, "kimi-k2.7-code");
+            assert!(resolved.resolved.supports_tools);
+            assert!(resolved.resolved.supports_reasoning);
+        }
+    }
+
+    #[test]
+    fn moonshot_explicit_kimi_k26_remains_available() {
+        let registry = ModelRegistry::default();
+        let resolved = registry.resolve(Some("kimi-k2.6"), Some(ProviderKind::Moonshot));
+
+        assert_eq!(resolved.resolved.provider, ProviderKind::Moonshot);
+        assert_eq!(resolved.resolved.id, "kimi-k2.6");
+        assert!(resolved.resolved.supports_reasoning);
+    }
+
+    #[test]
     fn xiaomi_mimo_tts_aliases_resolve_when_provider_hinted() {
         let registry = ModelRegistry::default();
         let resolved = registry.resolve(Some("tts"), Some(ProviderKind::XiaomiMimo));
@@ -1222,6 +1265,7 @@ mod tests {
             ("glm-5.1", "z-ai/glm-5.1"),
             ("minimax-m3", "minimax/minimax-m3"),
             ("openrouter-mimo-v2.5-pro", "xiaomi/mimo-v2.5-pro"),
+            ("openrouter-kimi-k2.7-code", "moonshotai/kimi-k2.7-code"),
             ("openrouter-kimi-k2.6", "moonshotai/kimi-k2.6"),
             ("nemotron-3-ultra", "nvidia/nemotron-3-ultra-550b-a55b"),
             (
